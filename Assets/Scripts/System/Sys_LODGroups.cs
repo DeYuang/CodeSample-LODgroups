@@ -1,28 +1,29 @@
 ﻿using UnityEngine;
 using System.Linq;
-using System.Collections;
 using System.Collections.Generic;
 
+/// <summary>  
+///  This class holds data about a LOD Group on a instance-based level.
+/// </summary>  
 [System.Serializable]
-public class LODGroup : System.Object{
-	public int					id							= -1;
-	public GameObject			mainObject					= null;
-	public Vector3 				origin						= Vector3.zero;
-	public bool 				culled						= false;
+public class LODGroup {
+	public	int					id							= -1;
+	public	GameObject			mainObject					= null;
+	public	Vector3 			origin						= Vector3.zero;
+	public	bool 				culled						= false;
+	public	bool				disableRendererOnly			= true;
+
+	// UpdateByCount is a feature that allows the user to update the list of children if the object's child count changes.
+	public	bool 				updateByCount				= false;		
 	
-	public bool 				updateByCount				= false;
-	public bool					disableRendererOnly			= true;
-	
-	public int					childCount					= -1;
-	public Renderer[]			childRenderers;
-	public GameObject[]			childObjects;
+	public	int					childCount					= -1;
+	public	Renderer[]			childRenderers;
+	public	GameObject[]		childObjects;
 }
 
 public class Sys_LODGroups : MonoBehaviour {
-		
-	static public		float				lodDistance					= 250f;
 
-	public 				float				cullingDistance				= 150F;
+	public 				float				cullingDistance				= 150.0F;
 	public 				bool				disableRendererOnly			= true;
 	public 				bool				updateByCount				= false;
 	public				Renderer[]			excludeRenderers			= new Renderer[0];
@@ -31,33 +32,22 @@ public class Sys_LODGroups : MonoBehaviour {
 	static public		int					groupCount					= 0;
 	private				int					ticket						= 0; // aka ID
 	static public		bool				masterExists				= false;
-	static public		Sys_LODGroups		iMaster						= null;
+	static public		Sys_LODGroups		instanceMaster				= null;
 	public				LODGroup[]			lodGroups;
 	static public		Transform			camTrans;
 
 	void Awake(){
 
-		// NOTE: This controll code prevents this system from being used on 32 bits executables
-		// This is done because of ram requirement concerns (You only get about 3 GB ram to work with).
-		#if UNITY_STANDALONE_WIN32
-		if(!Settings_Memory.forceAllow64Bit){
-			Destroy(this);
-			return;
-		}
-		#endif
-
 		// NOTE: Awake is called even when the script itself is disabled, so we manually have to check
 		// if the script is disabled or not. But on the bright side we can delete it if it's not,
-		// freeing up precious memory.
-		if(!this.enabled){
-			Destroy(this);
+		// freeing up some precious memory.
+		if(!this.enabled)
 			return;
-		}
 
-		// NOTE: This resets the LODGroup system when you load another scene
+		// NOTE: This makes sure the LODGroup system resets when you load another scene
 		if (masterExists) {
 			masterExists = false;
-			iMaster = null;
+			instanceMaster = null;
 			camTrans = null;
 			groupCount = 0;
 		}
@@ -65,19 +55,10 @@ public class Sys_LODGroups : MonoBehaviour {
 		if(transform.childCount > 0){
 			// NOTE: At the end of the Awake function, we make every instance of the script pull a "ticket"
 			ticket = groupCount++;
-
-			// NOTE: This code labels every LODGroup in case it needs to be debugged.
-			//transform.name = "!LODGroup Slave " + ticket;
 		}
 		else{
-			#if UNITY_EDITOR
-			// NOTE: This piece of editor code makes it easier to track any bugs with the system.
-			Debug.LogError ("Slave has no children!");
-			transform.name = "!FIX ME";
-			#endif
-			// NOTE: The else call is free, for all intents and purposes, so we can use this opportunity to free
-			// up a little bit of RAM.
-			Destroy (this);
+			Debug.LogError("Slave group has no children!");
+			this.enabled = false;
 		}
 	}
 
@@ -99,7 +80,7 @@ public class Sys_LODGroups : MonoBehaviour {
 
 		if(master){ // NOTE: This is going to be the master object
 			masterExists = true;
-			iMaster = this;
+			instanceMaster = this;
 
 			// NOTE: The reason I'm caching this transform is because Camera.main is actually
 			// a search type function - VERY expensive.
@@ -132,13 +113,13 @@ public class Sys_LODGroups : MonoBehaviour {
 		GrabArrays(thisGroup);
 
 		// NOTE: Do initial cull check
-		thisGroup.culled = (Vector3.Distance(camTrans.position, transform.position) < lodDistance);
+		thisGroup.culled = (Vector3.Distance(camTrans.position, transform.position) < cullingDistance);
 		if(thisGroup.culled )
 			Cull(thisGroup);
 
 		// NOTE: Write to the array and kill all slaves
 		if(!master){
-			iMaster.lodGroups[ticket] = thisGroup;
+			instanceMaster.lodGroups[ticket] = thisGroup;
 			//print ("Slave (ID " + ticket + ") registered and terminated succesfully!");
 			Destroy (this);
 		}
@@ -178,27 +159,22 @@ public class Sys_LODGroups : MonoBehaviour {
 		}
 	}
 
+	/// <summary>  
+	///  This functions checks if the group is inside or outisde of the culling area. The LODGroup may be updated if its state has changed.
+	/// </summary>  
 	private void CullCheck(LODGroup lodGroup){
 
 		// NOTE: enable if needed for debugging
-		//print (Vector3.Distance(camTrans.position, lodGroup.origin) + " < " + Settings_RenderSettings.lodDistance);
+		//print (Vector3.Distance(camTrans.position, lodGroup.origin) + " < " + cullingDistance);
 
 		float dist = Vector3.Distance(camTrans.position, lodGroup.origin);
 
 		if(lodGroup.culled){ // NOTE: the LODGroup we're currently working on is currently culled
-			if(dist < lodDistance){
-				// NOTE: Make member objects visible
-				//print ("(ID " + lodGroup.id + ") Objects are now in range!");
+			if(dist < cullingDistance)
 				Draw (lodGroup);
-			}
 		}
-		else{
-			if(dist > lodDistance){
-				// NOTE: Make objects invisible
-				//print ("(ID " + lodGroup.id + ") Objects are now out of range!");
-				Cull (lodGroup);
-			}
-		}
+		else if(dist > cullingDistance)
+			Cull (lodGroup);
 
 		// NOTE: Enable for debugging
 		/*if(lodGroup.culled)
@@ -207,6 +183,9 @@ public class Sys_LODGroups : MonoBehaviour {
 			print ("(ID " + lodGroup.id + ") PostCull: DRAWING");*/
 	}
 
+	/// <summary>  
+	///  This function makes sure the object is fully enabled and visible. It does the opposite of the Cull() Function.
+	/// </summary>  
 	private void Draw(LODGroup lodGroup){
 		
 		if(!lodGroup.culled)
@@ -239,12 +218,13 @@ public class Sys_LODGroups : MonoBehaviour {
 		}
 	}
 
+	/// <summary>  
+	///  This function makes disabled all subobjects and/or associated renderers. It disables the objects so that they are no longer drawn on the screen. This can be undone by calling the Cull() Function.
+	/// </summary>  
 	private void Cull(LODGroup lodGroup){
 
 		if(lodGroup.culled)
 			return;
-
-		//print ("(ID " + lodGroup.id + ") Cull request");
 
 		lodGroup.culled = true;
 
@@ -335,7 +315,5 @@ public class Sys_LODGroups : MonoBehaviour {
 			lodGroup.childObjects = new GameObject[0];
 		else
 			lodGroup.childObjects = childObjs.ToArray();
-		
-		//print (lodGroup.childObjects.Length + " Child Object and " + lodGroup.childRenderers.Length + " Child Renderers!");
 	}
 }

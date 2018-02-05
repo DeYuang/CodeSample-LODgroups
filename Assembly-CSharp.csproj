@@ -48,6 +48,7 @@
      <Compile Include="Assets\Scripts\Example\CameraMovement.cs" />
      <Compile Include="Assets\Scripts\Example\SpawnBlocks.cs" />
      <Compile Include="Assets\Scripts\System\Sys_LODGroups.cs" />
+     <Compile Include="Assets\Scripts\UI\UI_DistanceSlider.cs" />
  <Reference Include="UnityEngine.UI">
  <HintPath>C:/Program Files/Unity/Editor/Data/UnityExtensions/Unity/GUISystem/UnityEngine.UI.dll</HintPath>
  </Reference>

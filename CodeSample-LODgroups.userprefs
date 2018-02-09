@@ -1,9 +1,8 @@
 ﻿<Properties>
-  <MonoDevelop.Ide.Workspace ActiveConfiguration="Debug" />
-  <MonoDevelop.Ide.Workbench ActiveDocument="Assets\Scripts\UI\UI_DistanceSlider.cs">
+  <MonoDevelop.Ide.Workspace />
+  <MonoDevelop.Ide.Workbench ActiveDocument="..\..\!Hitmangame Workspace\Hitmangame82\Assets\Scripts\!NPC\NPC_BodyPartManager.cs">
     <Files>
-      <File FileName="Assets\Scripts\System\Sys_LODGroups.cs" Line="258" Column="77" />
-      <File FileName="Assets\Scripts\UI\UI_DistanceSlider.cs" Line="28" Column="97" />
+      <File FileName="..\..\!Hitmangame Workspace\Hitmangame82\Assets\Scripts\!NPC\NPC_BodyPartManager.cs" Line="6" Column="2" />
     </Files>
   </MonoDevelop.Ide.Workbench>
   <MonoDevelop.Ide.DebuggingService.Breakpoints>

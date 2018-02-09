@@ -61,7 +61,7 @@ public class Sys_LODGroups : MonoBehaviour {
 			instanceID = groupCount++;
 		}
 		else {
-			Debug.LogError("Sys_LODGroups Error: LOD Group has no children!");
+			Debug.LogError("Sys_LODGroups Error: LOD Group has no children!", gameObject);
 			this.enabled = false;
 		}
 	}
@@ -100,7 +100,7 @@ public class Sys_LODGroups : MonoBehaviour {
 		}
 		#if UNITY_EDITOR
 		else if(instanceID > groupCount) {
-			Debug.LogError("Sys_LODGroups Error: (ID " + lodGroups.Length +  ") can't be created because the array (Length " + lodGroups.Length + ") is not big enough!");
+			Debug.LogError("Sys_LODGroups Error: (ID " + lodGroups.Length +  ") can't be created because the array (Length " + lodGroups.Length + ") is not big enough!", gameObject);
 			return;
 		}
 		#endif
@@ -132,7 +132,7 @@ public class Sys_LODGroups : MonoBehaviour {
 			currentLODGroup = lodGroups[currentGroupID];
 			#if UNITY_EDITOR
 			                            if(currentLODGroup == null){
-				Debug.LogError("Sys_LODGroups Error: (ID " + currentGroupID + ") LODGroup does not exist!");
+				Debug.LogError("Sys_LODGroups Error: (ID " + currentGroupID + ") LODGroup does not exist!", gameObject);
 				continue;
 			}
 			#endif
@@ -277,7 +277,7 @@ public class Sys_LODGroups : MonoBehaviour {
 		else {
 			lodGroup.childRenderers = new Renderer[0];
 			#if UNITY_EDITOR
-			Debug.LogError("Sys_LODGroups Error: No Child Renderers found!");	
+			Debug.LogError("Sys_LODGroups Error: No Child Renderers found!", gameObject);	
 			#endif
 		}
 		
@@ -286,7 +286,7 @@ public class Sys_LODGroups : MonoBehaviour {
 		else {
 			lodGroup.childObjects = new GameObject[0];
 			#if UNITY_EDITOR
-			Debug.LogError("Sys_LODGroups Error: No Child GameObjects found!");	
+			Debug.LogError("Sys_LODGroups Error: No Child GameObjects found!", gameObject);	
 			#endif
 		}
 	}

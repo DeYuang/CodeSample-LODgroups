@@ -19,32 +19,36 @@ public class LODGroup {
 	public	int					childCount					= -1;
 	public	Renderer[]			childRenderers;
 	public	GameObject[]		childObjects;
+	public	GameObject[]		excludedObjects;
 }
 
 public class Sys_LODGroups : MonoBehaviour {
 
 	public 				float				cullingDistance				= 150.0F;
 	public 				bool				disableRendererOnly			= true;
-	public 				bool				updateByCount				= false;
-	public				Renderer[]			excludeRenderers			= new Renderer[0];
-	private				int					i							= 0;
+	public				GameObject[]		excludedObjects				= new GameObject[0];
 
-	static public		int					groupCount					= 0;
-	private				int					ticket						= 0; // aka ID
+	// UpdateByCount is a feature that allows the user to update the list of children if the object's child count changes.
+	public 				bool				updateByCount				= false;
+
+	// Group instance ID
+	private				int					instanceID					= 0;
+
 	static public		bool				masterExists				= false;
 	static public		Sys_LODGroups		instanceMaster				= null;
 	public				LODGroup[]			lodGroups;
+
+	static public		int					groupCount					= 0;
 	static public		Transform			camTrans;
 
-	void Awake(){
+	void Awake () {
 
 		// NOTE: Awake is called even when the script itself is disabled, so we manually have to check
-		// if the script is disabled or not. But on the bright side we can delete it if it's not,
-		// freeing up some precious memory.
+		// if the script is disabled or not.
 		if(!this.enabled)
 			return;
 
-		// NOTE: This makes sure the LODGroup system resets when you load another scene
+		// NOTE: This makes sure the LODGroup system resets properly when you load another scene
 		if (masterExists) {
 			masterExists = false;
 			instanceMaster = null;
@@ -52,33 +56,34 @@ public class Sys_LODGroups : MonoBehaviour {
 			groupCount = 0;
 		}
 
-		if(transform.childCount > 0){
-			// NOTE: At the end of the Awake function, we make every instance of the script pull a "ticket"
-			ticket = groupCount++;
+		if(transform.childCount > 0) {
+			// NOTE: At the end of the Awake() function, we give every instance of the script an instance ID
+			instanceID = groupCount++;
 		}
-		else{
-			Debug.LogError("Slave group has no children!");
+		else {
+			Debug.LogError("Sys_LODGroups Error: LOD Group has no children!");
 			this.enabled = false;
 		}
 	}
 
-	void Start(){
+	void Start () {
 
 		// NOTE: Because of the way the preceding Awake() is stuctured, any object still running this script
 		// HAS to have at least 1 child object. Ineligible objects have already been filtered out.
 		bool master = !masterExists;
 
-		// NOTE: this block creates the LODGroup itself and fills in some of the data
-		// It could be made into a neat LODGroup constructor call of course, but I think
-		// this more easilly readable.
+		// This block creates the LODGroup itself and fills in some of the data. It could be made into a neat
+		// LODGroup constructor call of course, but I think this is superfluous because construction of this
+		// object will only ever take place here.
 		LODGroup thisGroup = new LODGroup();
-		thisGroup.id = ticket;
+		thisGroup.id = instanceID;
 		thisGroup.mainObject = gameObject;
 		thisGroup.origin = transform.position;
 		thisGroup.updateByCount = updateByCount;
 		thisGroup.disableRendererOnly = disableRendererOnly;
+		thisGroup.excludedObjects = excludedObjects;
 
-		if(master){ // NOTE: This is going to be the master object
+		if(master) { // NOTE: This is going to be the master object
 			masterExists = true;
 			instanceMaster = this;
 
@@ -90,94 +95,72 @@ public class Sys_LODGroups : MonoBehaviour {
 						
 			#if UNITY_EDITOR
 			transform.name = "!LODGroup Master";
+			transform.SetAsFirstSibling();
 			#endif
 		}
 		#if UNITY_EDITOR
-		else{
-			//transform.name = "!LODGroup Slave " + ticket;
-			if(ticket > groupCount){
-			//	Debug.LogError("(ID " + lodGroups.Length +  ") can't be created because the array (Length " + lodGroups.Length + ") is not big enough!");
-				return;
-			}
+		else if(instanceID > groupCount) {
+			Debug.LogError("Sys_LODGroups Error: (ID " + lodGroups.Length +  ") can't be created because the array (Length " + lodGroups.Length + ") is not big enough!");
+			return;
 		}
 		#endif
-
-		// NOTE: The master will always register as number 0, because of the way Unity's script priorities work
-		// but in theory he can be any number he likes.
-		// Slaves however, can't be ID 0. They also can't be the ID of a slave that's already registered
-
-		//if(!master && (ticket == 0))// || lodGroups[ticket] != null))
-		//	Debug.LogError("Slave (ID " + ticket + ") is already registered!");
 
 		// NOTE: Grab Arrays
 		GrabArrays(thisGroup);
 
 		// NOTE: Do initial cull check
 		thisGroup.culled = (Vector3.Distance(camTrans.position, transform.position) < cullingDistance);
-		if(thisGroup.culled )
+		if(thisGroup.culled)
 			Cull(thisGroup);
 
 		// NOTE: Write to the array and kill all slaves
-		if(!master){
-			instanceMaster.lodGroups[ticket] = thisGroup;
+		if(!master) {
+			instanceMaster.lodGroups[instanceID] = thisGroup;
 			//print ("Slave (ID " + ticket + ") registered and terminated succesfully!");
 			Destroy (this);
 		}
 		else
-			lodGroups[ticket] = thisGroup;
+			lodGroups[instanceID] = thisGroup;
 	}
 
-	void Update(){
+	private void Update () {
 
-		// NOTE: This basically translates to "if the player is dead" and
-		// "if the game is paused and the camera is not in benchmarking mode".
-		//if(Player_Life.life < 0f || (Time.timeScale == 0f && Player_Camera.cameraMode != CameraMode.Sleaze))
-		//	return;
+		// Backwards iteration is faster over large arrays
+		LODGroup currentLODGroup;
+		for (int currentGroupID = groupCount; currentGroupID --> 0;) {
 
-		// TODO: only do this a maximum of 30 times a second maybe?
-		// or better yet, only do a limit number each frame?
-		// lodGroups.Length checks every 1/30th or a seconds? something like that?
-
-		// NOTE: This weird While() loop is the way I like to itterate over arrays
-		// Why not a foreach loop? Foreach has a bit of an overhead in Mono (IEnumerator.Next), so this is
-		// actually significantly faster.
-		int i = lodGroups.Length;
-		while(i-- > 0){
-
+			currentLODGroup = lodGroups[currentGroupID];
 			#if UNITY_EDITOR
-			if(lodGroups[i] == null){
-				Debug.LogError("(ID " + i + ") LODGroup does not exist!");
+			                            if(currentLODGroup == null){
+				Debug.LogError("Sys_LODGroups Error: (ID " + currentGroupID + ") LODGroup does not exist!");
 				continue;
 			}
 			#endif
 
-			// TODO: re-implement the childCount update
-			//if(lodGroup.updateByCount && lodGroup.childCount != lodGroup.childCount)
-			//	lodGroup = GrabArrays (lodGroup);
+			if(currentLODGroup.updateByCount && currentLODGroup.childCount != currentLODGroup.mainObject.transform.childCount)
+				GrabArrays (currentLODGroup);
 
-			CullCheck(lodGroups[i]);
+			CullCheck(currentLODGroup);
 		}
 	}
 
 	/// <summary>  
 	///  This functions checks if the group is inside or outisde of the culling area. The LODGroup may be updated if its state has changed.
 	/// </summary>  
-	private void CullCheck(LODGroup lodGroup){
+	private void CullCheck (LODGroup lodGroup) {
 
-		// NOTE: enable if needed for debugging
-		//print (Vector3.Distance(camTrans.position, lodGroup.origin) + " < " + cullingDistance);
+		float distance = Vector3.Distance(camTrans.position, lodGroup.origin);
 
-		float dist = Vector3.Distance(camTrans.position, lodGroup.origin);
-
-		if(lodGroup.culled){ // NOTE: the LODGroup we're currently working on is currently culled
-			if(dist < cullingDistance)
+		if(lodGroup.culled) {
+			if(distance < cullingDistance)
 				Draw (lodGroup);
 		}
-		else if(dist > cullingDistance)
+		else if(distance > cullingDistance)
 			Cull (lodGroup);
 
 		// NOTE: Enable for debugging
-		/*if(lodGroup.culled)
+		/*print (Vector3.Distance(camTrans.position, lodGroup.origin) + " < " + cullingDistance);
+		if(lodGroup.culled)
 			print ("(ID " + lodGroup.id + ") PostCull: CULLED");
 		else
 			print ("(ID " + lodGroup.id + ") PostCull: DRAWING");*/
@@ -191,29 +174,22 @@ public class Sys_LODGroups : MonoBehaviour {
 		if(!lodGroup.culled)
 			return;
 		
-		//print ("(ID " + lodGroup.id + ") Draw request");
-		
 		lodGroup.culled = false;
 		
 		if (disableRendererOnly) {
-			int childCount = lodGroup.childRenderers.Length;
-			Renderer rend;
-			while(childCount-- > 0){
-				rend = lodGroup.childRenderers[childCount];
-				//if(!rend)
-				//	continue;
-				//else
-				if (!rend.enabled)
-					rend.enabled = true;
+			Renderer currentRenderer;
+			for(int childCount = lodGroup.childRenderers.Length; childCount --> 0;){
+				currentRenderer = lodGroup.childRenderers[childCount];
+				if (!currentRenderer.enabled)
+					currentRenderer.enabled = true;
 			}
 		}
 		else {
-			int childCount = lodGroup.childObjects.Length;
-			GameObject child;
-			while(childCount-- > 0){
-				child = lodGroup.childObjects[childCount];
-				if (!child.activeInHierarchy)
-					child.SetActive (true);
+			GameObject currentChild;
+			for(int childCount = lodGroup.childObjects.Length; childCount --> 0;){
+				currentChild = lodGroup.childObjects[childCount];
+				if (!currentChild.activeInHierarchy)
+					currentChild.SetActive (true);
 			}
 		}
 	}
@@ -221,99 +197,97 @@ public class Sys_LODGroups : MonoBehaviour {
 	/// <summary>  
 	///  This function makes disabled all subobjects and/or associated renderers. It disables the objects so that they are no longer drawn on the screen. This can be undone by calling the Cull() Function.
 	/// </summary>  
-	private void Cull(LODGroup lodGroup){
+	private void Cull (LODGroup lodGroup) {
 
 		if(lodGroup.culled)
 			return;
 
 		lodGroup.culled = true;
 
-		if(lodGroup.disableRendererOnly){
-			int childRendererCount = lodGroup.childRenderers.Length;
-			Renderer rend;
-			while(childRendererCount > 0){
-				childRendererCount --;
-				rend = lodGroup.childRenderers[childRendererCount];
-				//if(!rend)
-				//	continue;
-				//else
-				if (rend.enabled)
-					rend.enabled = false;
+		if (disableRendererOnly) {
+			Renderer currentRenderer;
+			for(int childCount = lodGroup.childRenderers.Length; childCount --> 0;) {
+				currentRenderer = lodGroup.childRenderers[childCount];
+				if (currentRenderer.enabled)
+					currentRenderer.enabled = false;
 			}
 		}
-		else{
-			//print (lodGroup.id);
-			//print (lodGroup.childObjects.Length);
-			int childObjectCount = lodGroup.childObjects.Length;
-			GameObject child;
-			while(childObjectCount > 0){
-				childObjectCount --;
-				child = lodGroup.childObjects[childObjectCount];
-				if(child.activeInHierarchy)
-					child.SetActive(false);
-		
+		else {
+			GameObject currentChild;
+			for(int childCount = lodGroup.childObjects.Length; childCount --> 0;) {
+				currentChild = lodGroup.childObjects[childCount];
+				if (currentChild.activeInHierarchy)
+					currentChild.SetActive (false);
 			}
 		}
 	}
 
-	private void GrabArrays(LODGroup lodGroup){
+	private void GrabArrays (LODGroup lodGroup) {
 
-		// TODO: Only grab one array, not both!
+		GameObject mainObject = lodGroup.mainObject;
+		int childCount = lodGroup.childCount = mainObject.transform.childCount;
+		Renderer mainRenderer = mainObject.GetComponent<Renderer>();
 
-		// TODO: Further optimisation work:
-		// GetComponentsInChildren: slow!
-		// ToList: slow!
-		// List.Add: slow!
-		// List.RemoveAt: slow!
+		List<Renderer> ChildRenderers = new List<Renderer>();
+		List<GameObject> childObjects = new List <GameObject>();
 
-		List<Renderer> ChildRends = new List<Renderer>();
-		List<GameObject> childObjs = new List <GameObject>();
-		
-		lodGroup.childCount = lodGroup.mainObject.transform.childCount;
-		
-		// TODO: excluded array is local, if childcount triggers a re-grab,
-		// the exclusion will fuck up so we need to save the excluded objects in the struct as well 
-		
-		// NOTE: Now remove self and excluded from arrays
-		ChildRends = lodGroup.mainObject.GetComponentsInChildren<Renderer>().ToList();
-		i = ChildRends.Count;
-		Renderer mainRend = lodGroup.mainObject.GetComponent<Renderer>();
-		if(mainRend){
-			while(i-- > 0){
-				if(ChildRends[i] == mainRend){
-					// NOTE: this doesn't actually use the exclude array at all, but it turned out I don't actually
-					// need it, and having it in there just slows the loop down. The reason I'm keeping the array around
-					// is because I may find another use of the exclusion array's markup later down the line and because this
-					// code only runs on 64 executables in the first place, I'm not terribly concerned with RAM use at this point.
-					ChildRends.RemoveAt(i);
-					break; // TODO: remove this after we put exclusions back in
+		mainObject.GetComponentsInChildren<Renderer>(ChildRenderers);
+
+		// Now we are going to exclude self and excluded objects from both arrays
+		// -- Renderers are up first -- //
+		Renderer currentRenderer;
+		for (int currentObjectID = ChildRenderers.Count; currentObjectID --> 0;) {
+			currentRenderer = ChildRenderers[currentObjectID];
+
+			// Scan if the current Renderer is the main Object
+			if(currentRenderer == mainRenderer) {
+				ChildRenderers.RemoveAt(currentObjectID);
+				continue;
+			}
+			// Scan if the current Renderer is excluded from being culled
+			for(int currentExcludedRenderer = lodGroup.excludedObjects.Length; currentExcludedRenderer --> 0;) {
+				if(currentRenderer.gameObject == lodGroup.excludedObjects[currentExcludedRenderer]) {
+					ChildRenderers.RemoveAt(currentObjectID);
+					break;
 				}
-				//else if(ArrayFunction.Contains(lodGroup.childRenderers[i], excludeRenderers)){ //excludeRenderers.Length > 0 && 
-				//	lodGroup.childRenderers[i] = null;
-				//}
 			}
 		}
-		
-		i = lodGroup.mainObject.transform.childCount;
-		GameObject currObj;
-		while(i-- > 0){
-			currObj = lodGroup.mainObject.transform.GetChild(i).gameObject;
-			if(currObj != lodGroup.mainObject)
-				childObjs.Add(currObj);
+
+		// -- GameObjects are up now -- //
+		// This one's a little tricky - GameObject isn't a Component so you can't use a traditional
+		// GetComponent<>() call - we're gonna have to do something cheeky instead.
+		GameObject currentObject;
+		for (int currentObjectID = childCount; currentObjectID --> 0;) {
+				currentObject = mainObject.transform.GetChild(currentObjectID).gameObject;
+			
+			// Scan if the current Renderer is the main Object
+			if(currentObject == mainObject)
+				continue;
+			// Scan if the current Renderer is excluded from being culled
+			for(int currentExcludedObject = lodGroup.excludedObjects.Length; currentExcludedObject --> 0;) {
+				if(currentObject == lodGroup.excludedObjects[currentExcludedObject])
+					break;
+			}
+
+			childObjects.Add(currentObject);
 		}
 		
-		if(ChildRends.Count == 0){
+		if(ChildRenderers.Count >= 0)
+			lodGroup.childRenderers = ChildRenderers.ToArray();
+		else {
 			lodGroup.childRenderers = new Renderer[0];
 			#if UNITY_EDITOR
 			Debug.LogError("Sys_LODGroups Error: No Child Renderers found!");	
 			#endif
 		}
-		else
-			lodGroup.childRenderers = ChildRends.ToArray();
 		
-		if(childObjs.Count == 0)
+		if(childObjects.Count >= 0)
+			lodGroup.childObjects = childObjects.ToArray();
+		else {
 			lodGroup.childObjects = new GameObject[0];
-		else
-			lodGroup.childObjects = childObjs.ToArray();
+			#if UNITY_EDITOR
+			Debug.LogError("Sys_LODGroups Error: No Child GameObjects found!");	
+			#endif
+		}
 	}
 }
